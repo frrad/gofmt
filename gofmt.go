@@ -5,6 +5,7 @@
 package gofmt
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
@@ -19,7 +20,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"runtime/pprof"
 	"strings"
 )
 
@@ -171,58 +171,19 @@ func walkDir(path string) {
 	filepath.Walk(path, visitFile)
 }
 
-func main() {
-	// call gofmtMain in a separate function
-	// so that it can use defer and have them
-	// run before the exit.
-	gofmtMain()
-	os.Exit(exitCode)
-}
+func Fmt(input string) (string, error) {
+	inReader := strings.NewReader(input)
 
-func gofmtMain() {
-	flag.Usage = usage
-	flag.Parse()
+	var b bytes.Buffer
+	outWriter := bufio.NewWriter(&b)
 
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "creating cpu profile: %s\n", err)
-			exitCode = 2
-			return
-		}
-		defer f.Close()
-		pprof.StartCPUProfile(f)
-		defer pprof.StopCPUProfile()
+	err := processFile("<standard input>", inReader, outWriter, true)
+	if err != nil {
+		return "", err
 	}
 
-	initParserMode()
-	initRewrite()
-
-	if flag.NArg() == 0 {
-		if *write {
-			fmt.Fprintln(os.Stderr, "error: cannot use -w with standard input")
-			exitCode = 2
-			return
-		}
-		if err := processFile("<standard input>", os.Stdin, os.Stdout, true); err != nil {
-			report(err)
-		}
-		return
-	}
-
-	for i := 0; i < flag.NArg(); i++ {
-		path := flag.Arg(i)
-		switch dir, err := os.Stat(path); {
-		case err != nil:
-			report(err)
-		case dir.IsDir():
-			walkDir(path)
-		default:
-			if err := processFile(path, nil, os.Stdout, false); err != nil {
-				report(err)
-			}
-		}
-	}
+	outWriter.Flush()
+	return b.String(), nil
 }
 
 func writeTempFile(dir, prefix string, data []byte) (string, error) {
